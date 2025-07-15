@@ -21,10 +21,10 @@
         %(PreprocessorDefinitions)
       </PreprocessorDefinitions>
     </ClCompile>
-  </ItemDefinitionGroup>  <Import Project="$([MSBuild]::GetPathOfFileAbove(libHttpClient.GDK.props))" />
+  </ItemDefinitionGroup>  
+  <Import Project="$([MSBuild]::GetPathOfFileAbove(libHttpClient.GDK.props))" />
   <Import Project="$(HCBuildRoot)\libHttpClient.Common\libHttpClient.Common.vcxitems" Label="Shared" />
   <Import Project="$(HCBuildRoot)\libHttpClient.Win32.Shared\libHttpClient.Win32.Shared.vcxitems" Label="Shared" />
-  <Import Project="$(HCBuildRoot)\libHttpClient.Zlib\libHttpClient.Zlib.vcxitems" Label="Shared" />
   <Import Condition="'$(HCNoZlib)' != 'true'" Project="$(HCBuildRoot)\libHttpClient.Zlib\libHttpClient.Zlib.vcxitems" Label="Shared" />
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Gaming.Desktop.x64'">
     <ClCompile>
