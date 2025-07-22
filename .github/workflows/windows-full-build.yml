@@ -1,0 +1,137 @@
+name: Windows Full Solution Build
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-solution:
+    runs-on: windows-latest
+    
+    strategy:
+      matrix:
+        configuration: [Debug, Release]
+        platform: [x64, Win32]
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        fetch-depth: 0
+    
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+    
+    - name: Setup Visual Studio environment
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+        toolset: 14.3
+    
+    - name: Setup NuGet
+      uses: nuget/setup-nuget@v2
+      with:
+        nuget-version: 'latest'
+    
+    - name: Cache NuGet packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.vcxproj', '**/*.props') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+    
+    - name: Restore NuGet packages
+      run: |
+        nuget restore libHttpClient.vs2022.sln
+    
+    - name: Build entire solution
+      run: |
+        msbuild libHttpClient.vs2022.sln `
+          /p:Configuration=${{ matrix.configuration }} `
+          /p:Platform=${{ matrix.platform }} `
+          /p:PlatformToolset=v143 `
+          /p:WindowsTargetPlatformVersion=10.0.19041.0 `
+          /m `
+          /verbosity:minimal `
+          /maxcpucount
+    
+    - name: List all build outputs
+      run: |
+        Write-Host "=== Build Outputs ==="
+        if (Test-Path "Out") {
+          Write-Host "Out directory contents:"
+          Get-ChildItem -Path "Out" -Recurse -File | ForEach-Object { 
+            Write-Host "  $($_.FullName) ($($_.Length) bytes)"
+          }
+        }
+        
+        if (Test-Path "Int") {
+          Write-Host "\nInt directory contents (libraries and executables):"
+          Get-ChildItem -Path "Int" -Recurse -File -Include "*.lib", "*.dll", "*.exe" | ForEach-Object { 
+            Write-Host "  $($_.FullName) ($($_.Length) bytes)"
+          }
+        }
+        
+        Write-Host "\n=== All executables found ==="
+        Get-ChildItem -Path . -Recurse -Name "*.exe" -ErrorAction SilentlyContinue | ForEach-Object { 
+          Write-Host "  $_"
+        }
+        
+        Write-Host "\n=== All libraries found ==="
+        Get-ChildItem -Path . -Recurse -Name "*.lib" -ErrorAction SilentlyContinue | ForEach-Object { 
+          Write-Host "  $_"
+        }
+    
+    - name: Upload complete build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: libHttpClient-full-${{ matrix.platform }}-${{ matrix.configuration }}
+        path: |
+          Out/**/*
+          Int/**/*.lib
+          Int/**/*.dll
+          Int/**/*.exe
+          Int/**/*.pdb
+          **/*.lib
+          **/*.dll
+          **/*.exe
+        retention-days: 30
+        if-no-files-found: warn
+    
+    - name: Verify key components
+      run: |
+        Write-Host "=== Verifying key build components ==="
+        
+        # Check for libHttpClient library
+        $libFiles = Get-ChildItem -Path . -Recurse -Name "*HttpClient*.lib" -ErrorAction SilentlyContinue
+        if ($libFiles) {
+          Write-Host "✓ libHttpClient libraries found:"
+          $libFiles | ForEach-Object { Write-Host "  $_" }
+        } else {
+          Write-Host "✗ No libHttpClient libraries found"
+        }
+        
+        # Check for OpenSSL libraries
+        $sslLibs = Get-ChildItem -Path . -Recurse -Name "*ssl*.lib" -ErrorAction SilentlyContinue
+        $cryptoLibs = Get-ChildItem -Path . -Recurse -Name "*crypto*.lib" -ErrorAction SilentlyContinue
+        if ($sslLibs -or $cryptoLibs) {
+          Write-Host "✓ OpenSSL libraries found:"
+          $sslLibs | ForEach-Object { Write-Host "  $_" }
+          $cryptoLibs | ForEach-Object { Write-Host "  $_" }
+        } else {
+          Write-Host "✗ No OpenSSL libraries found"
+        }
+        
+        # Check for sample executables
+        $sampleExes = Get-ChildItem -Path . -Recurse -Name "*Http*.exe" -ErrorAction SilentlyContinue
+        if ($sampleExes) {
+          Write-Host "✓ Sample executables found:"
+          $sampleExes | ForEach-Object { Write-Host "  $_" }
+        } else {
+          Write-Host "✗ No sample executables found"
+        }

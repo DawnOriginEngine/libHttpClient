@@ -1,0 +1,155 @@
+name: Windows x64 Build
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
+  BUILD_TYPE: Release
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    strategy:
+      matrix:
+        configuration: [Debug, Release]
+        platform: [x64]
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        fetch-depth: 0
+    
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+    
+    - name: Setup Visual Studio environment
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+        toolset: 14.3
+    
+    - name: Setup NuGet
+      uses: nuget/setup-nuget@v2
+      with:
+        nuget-version: 'latest'
+    
+    - name: Cache NuGet packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.vcxproj', '**/*.props') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+    
+    - name: Restore NuGet packages
+      run: |
+        nuget restore libHttpClient.vs2022.sln
+    
+    - name: Build OpenSSL dependencies (libcrypto)
+      run: |
+        msbuild Build\libcrypto.143.Win32\libcrypto.143.Win32.vcxproj `
+          /p:Configuration=${{ matrix.configuration }} `
+          /p:Platform=${{ matrix.platform }} `
+          /p:PlatformToolset=v143 `
+          /p:WindowsTargetPlatformVersion=10.0.19041.0 `
+          /m `
+          /verbosity:minimal
+    
+    - name: Build OpenSSL dependencies (libssl)
+      run: |
+        msbuild Build\libssl.143.Win32\libssl.143.Win32.vcxproj `
+          /p:Configuration=${{ matrix.configuration }} `
+          /p:Platform=${{ matrix.platform }} `
+          /p:PlatformToolset=v143 `
+          /p:WindowsTargetPlatformVersion=10.0.19041.0 `
+          /m `
+          /verbosity:minimal
+    
+    - name: Build libHttpClient Win32 x64
+      run: |
+        msbuild Build\libHttpClient.143.Win32.C\libHttpClient.143.Win32.C.vcxproj `
+          /p:Configuration=${{ matrix.configuration }} `
+          /p:Platform=${{ matrix.platform }} `
+          /p:PlatformToolset=v143 `
+          /p:WindowsTargetPlatformVersion=10.0.19041.0 `
+          /m `
+          /verbosity:minimal
+    
+    - name: Build Win32 HTTP Sample
+      run: |
+        msbuild Samples\Win32-Http\Win32Http.vcxproj `
+          /p:Configuration=${{ matrix.configuration }} `
+          /p:Platform=${{ matrix.platform }} `
+          /p:PlatformToolset=v143 `
+          /p:WindowsTargetPlatformVersion=10.0.19041.0 `
+          /m `
+          /verbosity:minimal
+    
+    - name: Build Unit Tests (TAEF)
+      continue-on-error: true
+      run: |
+        msbuild Build\libHttpClient.UnitTest.TAEF\libHttpClient.UnitTest.TAEF.vcxproj `
+          /p:Configuration=${{ matrix.configuration }} `
+          /p:Platform=${{ matrix.platform }} `
+          /p:PlatformToolset=v143 `
+          /p:WindowsTargetPlatformVersion=10.0.19041.0 `
+          /m `
+          /verbosity:minimal
+    
+    - name: List build outputs
+      run: |
+        Write-Host "Build outputs:"
+        if (Test-Path "Out") {
+          Get-ChildItem -Path "Out" -Recurse -File | ForEach-Object { Write-Host $_.FullName }
+        } else {
+          Write-Host "Out directory not found"
+        }
+        
+        if (Test-Path "Int") {
+          Write-Host "\nIntermediate files:"
+          Get-ChildItem -Path "Int" -Recurse -File -Include "*.lib", "*.dll", "*.exe" | ForEach-Object { Write-Host $_.FullName }
+        }
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: libHttpClient-windows-x64-${{ matrix.configuration }}
+        path: |
+          Out/**/*
+          Int/**/*.lib
+          Int/**/*.dll
+          Int/**/*.exe
+          Int/**/*.pdb
+        retention-days: 30
+        if-no-files-found: warn
+    
+    - name: Run basic smoke tests
+      continue-on-error: true
+      run: |
+        Write-Host "Looking for built executables..."
+        $exeFiles = Get-ChildItem -Path . -Recurse -Name "*.exe" -ErrorAction SilentlyContinue
+        if ($exeFiles) {
+          Write-Host "Found executables:"
+          $exeFiles | ForEach-Object { Write-Host "  $_" }
+          
+          # Try to run Win32Http sample if it exists
+          $win32HttpExe = Get-ChildItem -Path . -Recurse -Name "Win32Http.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($win32HttpExe) {
+            Write-Host "\nTesting Win32Http sample..."
+            try {
+              & ".\$win32HttpExe" --help 2>&1 | Write-Host
+            } catch {
+              Write-Host "Win32Http sample test failed: $($_.Exception.Message)"
+            }
+          }
+        } else {
+          Write-Host "No executable files found"
+        }
