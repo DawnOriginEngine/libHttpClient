@@ -1,0 +1,18 @@
+ gzguts.h | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/gzguts.h b/gzguts.h
+index f937504..e5d42cd 100644
+--- a/gzguts.h
++++ b/gzguts.h
+@@ -30,6 +30,10 @@
+ #endif
+ #include <fcntl.h>
+ 
++#ifndef _WIN32
++#  include <unistd.h>
++#endif
++
+ #ifdef _WIN32
+ #  include <stddef.h>
+ #endif

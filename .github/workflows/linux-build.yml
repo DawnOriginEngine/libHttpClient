@@ -30,6 +30,11 @@ jobs:
         submodules: recursive
         fetch-depth: 0
     
+    - name: Apply zlib patch
+      run: |
+        cd External/zlib
+        git apply ../../zlib.diff
+    
     - name: Set up build environment
       run: |
         sudo apt-get update
